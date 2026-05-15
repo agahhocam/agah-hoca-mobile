@@ -62,6 +62,8 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    environment:
+      BACKEND_URL: http://backend:8000
 
 volumes:
   postgres_data:
