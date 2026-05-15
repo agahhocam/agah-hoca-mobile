@@ -22,6 +22,10 @@ export default function Dashboard() {
       selectSchool(school.id);
       setNewName("");
     },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail ?? err?.message ?? "Bilinmeyen hata";
+      alert(`Okul oluşturulamadı: ${msg}`);
+    },
   });
 
   const selected = schools.find((s: any) => s.id === schoolId);
