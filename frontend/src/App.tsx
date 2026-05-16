@@ -8,6 +8,7 @@ import LessonsPage from "./pages/LessonsPage";
 import ConstraintBuilderPage from "./pages/ConstraintBuilderPage";
 import SchedulePage from "./pages/SchedulePage";
 import TimetableGrid from "./pages/TimetableGrid";
+import PrintPage from "./pages/PrintPage";
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="constraints" element={<ConstraintBuilderPage />} />
           <Route path="schedule" element={<SchedulePage />} />
           <Route path="timetable" element={<TimetableGrid />} />
+          <Route path="print" element={<PrintPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

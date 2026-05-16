@@ -9,6 +9,7 @@ const NAV = [
   { to: "/constraints", label: "Kısıt Oluşturucu", icon: "⚙️" },
   { to: "/schedule", label: "Program Üret", icon: "🧩" },
   { to: "/timetable", label: "Görsel Program", icon: "📅" },
+  { to: "/print", label: "Çıktı Al", icon: "🖨️" },
 ];
 
 export default function Layout() {
@@ -17,6 +18,9 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="w-60 bg-primary text-white flex flex-col flex-shrink-0">
         <div className="px-6 py-5 border-b border-blue-700">
+          {localStorage.getItem("school_logo") && (
+            <img src={localStorage.getItem("school_logo")!} alt="logo" className="h-10 object-contain mb-2 rounded" />
+          )}
           <h1 className="text-lg font-bold leading-tight">ADPYS</h1>
           <p className="text-xs text-blue-200 mt-0.5">Akıllı Ders Programı</p>
         </div>
