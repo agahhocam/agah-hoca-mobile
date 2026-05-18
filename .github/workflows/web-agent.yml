@@ -1,0 +1,66 @@
+name: agah hoca — Web Analiz Ajanı
+
+on:
+  # Her gün sabah 08:00 (Türkiye saati = UTC+3, yani UTC 05:00)
+  schedule:
+    - cron: "0 5 * * *"
+
+  # Her deploy sonrası da çalışsın (main branch'e push)
+  push:
+    branches:
+      - main
+
+  # Elle de başlatılabilsin
+  workflow_dispatch:
+
+jobs:
+  web-analysis:
+    name: 🔍 Site Analizi
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Kodu al
+        uses: actions/checkout@v4
+
+      - name: 🟢 Node.js 20 kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: scripts/web-agent/package.json
+
+      - name: 📦 Bağımlılıkları yükle
+        working-directory: scripts/web-agent
+        run: npm install
+
+      - name: 🎭 Playwright tarayıcısını kur
+        working-directory: scripts/web-agent
+        run: npx playwright install chromium --with-deps
+
+      - name: 🔍 Web Ajanını Çalıştır
+        working-directory: scripts/web-agent
+        env:
+          TARGET_URL: https://agah-hoca-6nkp.vercel.app
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node agent.mjs
+
+      - name: 📊 Raporu artifact olarak kaydet
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-analiz-raporu-${{ github.run_number }}
+          path: scripts/web-agent/reports/
+          retention-days: 30
+
+      - name: 📋 Son raporu iş özetine ekle
+        if: always()
+        run: |
+          if [ -f "scripts/web-agent/reports/son-rapor.md" ]; then
+            echo "## 📊 Web Analiz Raporu" >> $GITHUB_STEP_SUMMARY
+            cat scripts/web-agent/reports/son-rapor.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Rapor oluşturulamadı." >> $GITHUB_STEP_SUMMARY
+          fi

@@ -1,0 +1,14 @@
+{
+  "name": "agah-hoca-web-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "agah hoca sitesi için otomatik hata tespit ve analiz ajanı",
+  "scripts": {
+    "start": "node agent.mjs",
+    "check": "node agent.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "playwright": "^1.48.0"
+  }
+}
