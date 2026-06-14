@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { schedulesApi, teachersApi, subjectsApi, classesApi } from "../api/client";
 import { useSchool } from "../hooks/useSchool";
 
@@ -28,7 +28,11 @@ export default function PrintPage() {
   const { data: subjects = [] } = useQuery({ queryKey: ["subjects", schoolId], queryFn: () => subjectsApi.list(schoolId!), enabled: !!schoolId });
   const { data: classes = [] } = useQuery({ queryKey: ["classes", schoolId], queryFn: () => classesApi.list(schoolId!), enabled: !!schoolId });
 
-  const resolve = (list: any[], id: string) => list.find((x) => x.id === id)?.name ?? "?";
+  const subjectMap = useMemo(() => new Map<string, string>(subjects.map((s: any) => [s.id, s.name])), [subjects]);
+  const teacherMap = useMemo(() => new Map<string, string>(teachers.map((t: any) => [t.id, t.name])), [teachers]);
+  const classMap = useMemo(() => new Map<string, string>(classes.map((c: any) => [c.id, c.name])), [classes]);
+
+  const resolve = (map: Map<string, string>, id: string) => map.get(id) ?? "?";
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -162,10 +166,10 @@ export default function PrintPage() {
                         ) : (
                           entries.map((e, i) => (
                             <div key={i} className="text-xs leading-tight">
-                              <div className="font-semibold">{resolve(subjects, e.subject_id)}</div>
+                              <div className="font-semibold">{resolve(subjectMap, e.subject_id)}</div>
                               {tab === "teacher"
-                                ? <div className="text-gray-600">{resolve(classes, e.class_id)}</div>
-                                : <div className="text-gray-600">{resolve(teachers, e.teacher_id)}</div>
+                                ? <div className="text-gray-600">{resolve(classMap, e.class_id)}</div>
+                                : <div className="text-gray-600">{resolve(teacherMap, e.teacher_id)}</div>
                               }
                             </div>
                           ))

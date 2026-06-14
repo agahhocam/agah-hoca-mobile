@@ -324,8 +324,14 @@ class SqlScheduleRepository:
         return await self.list(school_id)
 
     async def get_latest(self, school_id: UUID) -> Schedule | None:
-        schedules = await self.list(school_id)
-        return schedules[0] if schedules else None
+        from sqlalchemy.orm import selectinload
+        stmt = (select(ScheduleModel)
+                .options(selectinload(ScheduleModel.entries))
+                .where(ScheduleModel.school_id == school_id)
+                .order_by(ScheduleModel.version.desc())
+                .limit(1))
+        result = (await self.db.execute(stmt)).scalar_one_or_none()
+        return _schedule_from_model(result) if result else None
 
     async def save(self, entity: Schedule) -> Schedule:
         latest = await self.get_latest(entity.school_id)

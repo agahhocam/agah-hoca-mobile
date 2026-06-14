@@ -56,6 +56,12 @@ def solve(inp: SolverInput) -> SolverResult:
     class_map = {c.id: c for c in inp.classes}
     timeslot_map = {ts.id: ts for ts in inp.timeslots}
 
+    reqs_by_teacher: dict[UUID, list[LessonRequirement]] = {}
+    reqs_by_class: dict[UUID, list[LessonRequirement]] = {}
+    for r in inp.requirements:
+        reqs_by_teacher.setdefault(r.teacher_id, []).append(r)
+        reqs_by_class.setdefault(r.class_id, []).append(r)
+
     # Build (requirement, timeslot) decision variables
     assign: dict[tuple, cp_model.IntVar] = {}
     for req in inp.requirements:
@@ -75,7 +81,7 @@ def solve(inp: SolverInput) -> SolverResult:
 
     # --- Hard Constraint 2: teacher at most one class per timeslot ---
     for teacher in inp.teachers:
-        reqs_for_teacher = [r for r in inp.requirements if r.teacher_id == teacher.id]
+        reqs_for_teacher = reqs_by_teacher.get(teacher.id, [])
         for ts in inp.timeslots:
             slots = [
                 assign[(r.teacher_id, r.class_id, r.subject_id, ts.id)]
@@ -86,7 +92,7 @@ def solve(inp: SolverInput) -> SolverResult:
 
     # --- Hard Constraint 3: class at most one lesson per timeslot ---
     for cls in inp.classes:
-        reqs_for_class = [r for r in inp.requirements if r.class_id == cls.id]
+        reqs_for_class = reqs_by_class.get(cls.id, [])
         for ts in inp.timeslots:
             slots = [
                 assign[(r.teacher_id, r.class_id, r.subject_id, ts.id)]
@@ -98,7 +104,7 @@ def solve(inp: SolverInput) -> SolverResult:
     # --- Hard Constraint 4: teacher unavailable slots ---
     hard_unavailable = _parse_unavailable_constraints(inp.constraints, "teacher_unavailable")
     for (target_id, ts_id), _ in hard_unavailable.items():
-        reqs = [r for r in inp.requirements if r.teacher_id == target_id]
+        reqs = reqs_by_teacher.get(target_id, [])
         for r in reqs:
             key = (r.teacher_id, r.class_id, r.subject_id, ts_id)
             if key in assign:
@@ -106,7 +112,7 @@ def solve(inp: SolverInput) -> SolverResult:
 
     class_unavailable = _parse_unavailable_constraints(inp.constraints, "class_unavailable")
     for (target_id, ts_id), _ in class_unavailable.items():
-        reqs = [r for r in inp.requirements if r.class_id == target_id]
+        reqs = reqs_by_class.get(target_id, [])
         for r in reqs:
             key = (r.teacher_id, r.class_id, r.subject_id, ts_id)
             if key in assign:
@@ -115,11 +121,13 @@ def solve(inp: SolverInput) -> SolverResult:
     # --- Soft Constraints (objective penalties) ---
     penalty_terms: list[tuple[cp_model.IntVar, int]] = []
 
-    soft_constraints = {c.type: c for c in inp.constraints if c.weight > 0}
+    soft_constraints: dict[str, list[Constraint]] = {}
+    for c in inp.constraints:
+        if c.weight > 0:
+            soft_constraints.setdefault(c.type, []).append(c)
 
     # no_afternoon: penalise each assignment in period >= AFTERNOON_START_PERIOD
-    if "no_afternoon" in soft_constraints:
-        c = soft_constraints["no_afternoon"]
+    for c in soft_constraints.get("no_afternoon", []):
         for (t_id, c_id, s_id, ts_id), var in assign.items():
             ts = timeslot_map[ts_id]
             if ts.period >= AFTERNOON_START_PERIOD:
@@ -127,34 +135,49 @@ def solve(inp: SolverInput) -> SolverResult:
                     penalty_terms.append((var, c.weight))
 
     # no_first_period: penalise period == 1
-    if "no_first_period" in soft_constraints:
-        c = soft_constraints["no_first_period"]
+    for c in soft_constraints.get("no_first_period", []):
         for (t_id, c_id, s_id, ts_id), var in assign.items():
             ts = timeslot_map[ts_id]
             if ts.period == 1:
                 if c.target_id is None or c.target_id in (t_id, c_id):
                     penalty_terms.append((var, c.weight))
 
+    # day_preference: penalise assignments on days outside the preferred set
+    for c in soft_constraints.get("day_preference", []):
+        preferred_days = set(c.parameters.get("days", []))
+        if not preferred_days:
+            continue
+        for (t_id, c_id, s_id, ts_id), var in assign.items():
+            ts = timeslot_map[ts_id]
+            if ts.day not in preferred_days:
+                if c.target_id is None or c.target_id in (t_id, c_id):
+                    penalty_terms.append((var, c.weight))
+
     # consecutive: reward consecutive lessons for same class+subject on same day
     # implemented as a bonus (subtract from penalty objective)
     consecutive_bonus: list[tuple[cp_model.IntVar, int]] = []
-    if "consecutive_preferred" in soft_constraints:
-        c = soft_constraints["consecutive_preferred"]
-        for req in inp.requirements:
-            by_day: dict[int, list[Timeslot]] = {}
-            for ts in inp.timeslots:
-                by_day.setdefault(ts.day, []).append(ts)
-            for day_slots in by_day.values():
-                day_slots.sort(key=lambda x: x.period)
-                for i in range(len(day_slots) - 1):
-                    ts_a, ts_b = day_slots[i], day_slots[i + 1]
-                    if ts_b.period == ts_a.period + 1:
-                        ka = (req.teacher_id, req.class_id, req.subject_id, ts_a.id)
-                        kb = (req.teacher_id, req.class_id, req.subject_id, ts_b.id)
-                        if ka in assign and kb in assign:
-                            both = model.new_bool_var(f"consec_{ka}_{kb}")
-                            model.add_bool_and([assign[ka], assign[kb]]).only_enforce_if(both)
-                            consecutive_bonus.append((both, c.weight))
+    consecutive_constraints = soft_constraints.get("consecutive_preferred", [])
+    if consecutive_constraints:
+        by_day: dict[int, list[Timeslot]] = {}
+        for ts in inp.timeslots:
+            by_day.setdefault(ts.day, []).append(ts)
+        for day_slots in by_day.values():
+            day_slots.sort(key=lambda x: x.period)
+
+        for c in consecutive_constraints:
+            for req in inp.requirements:
+                if c.target_id is not None and c.target_id not in (req.teacher_id, req.class_id):
+                    continue
+                for day_slots in by_day.values():
+                    for i in range(len(day_slots) - 1):
+                        ts_a, ts_b = day_slots[i], day_slots[i + 1]
+                        if ts_b.period == ts_a.period + 1:
+                            ka = (req.teacher_id, req.class_id, req.subject_id, ts_a.id)
+                            kb = (req.teacher_id, req.class_id, req.subject_id, ts_b.id)
+                            if ka in assign and kb in assign:
+                                both = model.new_bool_var(f"consec_{ka}_{kb}")
+                                model.add_bool_and([assign[ka], assign[kb]]).only_enforce_if(both)
+                                consecutive_bonus.append((both, c.weight))
 
     # Objective: minimise penalty - bonus
     total_penalty = sum(w * var for var, w in penalty_terms)

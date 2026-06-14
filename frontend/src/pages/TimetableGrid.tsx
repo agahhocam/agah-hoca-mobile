@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { schedulesApi, teachersApi, subjectsApi, classesApi } from "../api/client";
 import { useSchool } from "../hooks/useSchool";
 import { Card, CardTitle } from "../components/ui/Card";
@@ -17,8 +18,12 @@ export default function TimetableGrid() {
   const { data: subjects = [] } = useQuery({ queryKey: ["subjects", schoolId], queryFn: () => subjectsApi.list(schoolId!), enabled: !!schoolId });
   const { data: classes = [] } = useQuery({ queryKey: ["classes", schoolId], queryFn: () => classesApi.list(schoolId!), enabled: !!schoolId });
 
-  const resolve = (list: any[], id: string, fallback = "?") =>
-    list.find((x) => x.id === id)?.name ?? fallback;
+  const teacherMap = useMemo(() => new Map<string, string>(teachers.map((t: any) => [t.id, t.name])), [teachers]);
+  const subjectMap = useMemo(() => new Map<string, string>(subjects.map((s: any) => [s.id, s.name])), [subjects]);
+  const classMap = useMemo(() => new Map<string, string>(classes.map((c: any) => [c.id, c.name])), [classes]);
+
+  const resolve = (map: Map<string, string>, id: string, fallback = "?") =>
+    map.get(id) ?? fallback;
 
   if (!schoolId) return <p className="text-gray-500">Önce bir okul seçin.</p>;
   if (isLoading) return <p className="text-gray-400">Program yükleniyor…</p>;
@@ -82,9 +87,9 @@ export default function TimetableGrid() {
                               key={idx}
                               className={`border rounded px-2 py-1 text-xs ${subjectColorMap[e.subject_id] ?? "bg-gray-50 border-gray-200"}`}
                             >
-                              <div className="font-semibold">{resolve(subjects, e.subject_id)}</div>
-                              <div className="opacity-75">{resolve(classes, e.class_id)}</div>
-                              <div className="opacity-60">{resolve(teachers, e.teacher_id)}</div>
+                              <div className="font-semibold">{resolve(subjectMap, e.subject_id)}</div>
+                              <div className="opacity-75">{resolve(classMap, e.class_id)}</div>
+                              <div className="opacity-60">{resolve(teacherMap, e.teacher_id)}</div>
                             </div>
                           ))}
                         </div>
